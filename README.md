@@ -37,7 +37,8 @@ When you change the list of files the service worker precaches, bump `VERSION` i
 - **Career:** race the courses in order; finishing in the top 3 qualifies you and unlocks the next course. Progress is saved. Quick Race and Practice stay open on every course.
 - **Race or practice:** race 7 AI pilots, or practice alone with no opponents or item pickups. Race and practice best times (total and best lap) are saved separately for each course and shown on the course list.
 - **8 ship designs:** all handle identically; only the looks differ.
-- **Physics:** ships hover on a spring, and there's no ground friction. Air drag is low along the nose and high side-on, and the airbrake adds drag and tightens turns.
+- **Physics:** ships hover on a spring, and there's no ground friction. Top speed is about 175 km/h (230 on boost), so a lap takes about a minute. Rammed ships get shoved sideways and lose grip for a moment. Air drag is low along the nose and high side-on, and the airbrake adds drag and tightens turns.
+- **Jumps:** each gap has a kicker ramp, angled for that spot on the course, with a booster strip that brings slow ships up to clearing speed, and a landing ramp on the far side.
 - **Track pickups:** boost pads, plus one-shot items: homing missile (with an incoming-missile warning), rear mine, turbo and a timed shield.
 - **Rear-view mirror:** a strip along the top of the screen shows what's behind you.
 - **Sound:** synthesised with Web Audio, with a compressor and a short reverb. The engine is a low thrust roar that swells with the throttle.
