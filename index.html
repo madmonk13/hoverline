@@ -1819,7 +1819,7 @@ function startRace(idx,practice){
   $('#posBlock').classList.toggle('hidden',practice);
   mm=null;camInit=false;game.state='countdown';lastItem='x';
   $('#menu').classList.add('hidden');$('#ships').classList.add('hidden');$('#results').classList.add('hidden');$('#pause').classList.add('hidden');
-  $('#hud').classList.remove('hidden');$('#vig').classList.remove('hidden');$('#touch').classList.toggle('hidden',!isTouch);$('#steerHint').classList.remove('hidden');$('#throttleHint').classList.remove('hidden');layoutMirror();
+  $('#hud').classList.remove('hidden');$('#vig').classList.remove('hidden');$('#touch').classList.toggle('hidden',!isTouch);$('#itemSlot').classList.toggle('hidden',isTouch);$('#steerHint').classList.remove('hidden');$('#throttleHint').classList.remove('hidden');layoutMirror();
   hud.msg.classList.remove('show');setLapLine();
   onResize();
 }
