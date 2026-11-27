@@ -1216,7 +1216,7 @@ function newShip(k,name,sty){
     idx:0,lapCount:-1,maxLap:-1,lastS:0,progress:0,finished:false,finishTime:0,lapStart:0,lapTimes:[],
     item:null,shield:0,boostT:0,spinT:0,spinAng:0,ghostT:0,padCD:{},wrongT:0,airT:0,
     thrustMul:1,in:{steer:0,gas:false,brake:false},auto:false,
-    ai:{lane:(Math.random()*2-1)*0.5,laneT:Math.random()*3,lat:0,avoid:0,latCap:150+Math.random()*30,itemT:0,base:1}};
+    ai:{lane:(Math.random()*2-1)*0.5,laneT:Math.random()*3,lat:0,avoid:0,latCap:150+Math.random()*30,itemT:0,base:1,aggr:Math.random()}};
 }
 function loadTrack(idx){
   if(world){disposeGroup(world);world=null;}
@@ -1251,7 +1251,7 @@ function resetRace(){
     sh.pos.copy(F.c).addScaledVector(F.R,lat).addScaledVector(F.U,1.3);
     sh.vel.set(0,0,0);sh.fwd.copy(F.T);sh.visUp.copy(F.U);sh.idx=F.i;
     locate(tr,sh.pos,sh.idx,sh.loc);sh.lastS=sh.loc.s;
-    Object.assign(sh,{lapCount:-1,maxLap:-1,progress:sh.loc.s-tr.L,finished:false,finishTime:0,lapStart:0,lapTimes:[],item:null,shield:0,boostT:0,spinT:0,spinAng:0,ghostT:0,padCD:{},wrongT:0,auto:false});
+    Object.assign(sh,{lapCount:-1,maxLap:-1,progress:sh.loc.s-tr.L,finished:false,finishTime:0,lapStart:0,lapTimes:[],item:null,shield:0,boostT:0,spinT:0,spinAng:0,ghostT:0,bumpT:0,padCD:{},wrongT:0,auto:false});
     if(!sh.isPlayer){sh.ai.base=clamp(spread+(Math.random()*0.07-0.04)+(slot<3?0.015:0),0.8,1.02);sh.thrustMul=sh.ai.base;sh.ai.lat=lat;}
     else sh.thrustMul=1;
   });
@@ -1272,6 +1272,7 @@ function stepShip(sh,dt){
   const racing=game.state==='race'||game.state==='finished';
   let steer=sh.in.steer,gas=racing?+sh.in.gas||0:0,brk=racing?+sh.in.brake||0:0;
   if(sh.spinT>0){steer*=0.2;gas=0;}
+  if(sh.bumpT>0)steer*=0.5;
   const vf0=sh.vel.dot(F);
   const yaw=lerp(PHYS.yawLow,PHYS.yawHigh,clamp(Math.abs(vf0)/140,0,1))*(1+0.25*brk);
   if(steer!==0){_q.setFromAxisAngle(U,-steer*yaw*dt);F.applyQuaternion(_q);}
@@ -1285,7 +1286,7 @@ function stepShip(sh,dt){
   let vf=sh.vel.dot(F),vs=sh.vel.dot(_S),vu=sh.vel.dot(U);
   const dragF=PHYS.dragQ*vf*Math.abs(vf)+PHYS.dragL*vf+brk*PHYS.brakeDrag*vf;
   vf-=dragF*dt;
-  vs*=Math.exp(-lerp(PHYS.latDrag,PHYS.brakeLat,brk)*dt);
+  vs*=Math.exp(-lerp(PHYS.latDrag,PHYS.brakeLat,brk)*(sh.bumpT>0?0.2:1)*dt);
   const grounded=!L.gap&&L.h<4.5&&L.h>-3;
   if(grounded){vu+=(PHYS.k*(PHYS.hover-L.h)-PHYS.c*vu-PHYS.gTrack)*dt;}
   sh.vel.copy(F).multiplyScalar(vf).addScaledVector(_S,vs).addScaledVector(U,vu);
@@ -1308,7 +1309,7 @@ function stepShip(sh,dt){
   }
   if(L.h<-14||(!L.gap&&L.h<-3.5&&sh.airT>0.05)||L.h>160)respawn(sh);
   // timers
-  if(sh.boostT>0)sh.boostT-=dt;if(sh.shield>0)sh.shield-=dt;if(sh.ghostT>0)sh.ghostT-=dt;
+  if(sh.boostT>0)sh.boostT-=dt;if(sh.bumpT>0)sh.bumpT-=dt;if(sh.shield>0)sh.shield-=dt;if(sh.ghostT>0)sh.ghostT-=dt;
   if(sh.spinT>0){sh.spinT-=dt;sh.spinAng+=dt*16;}else sh.spinAng=0;
   // progress
   let ds=L.s-sh.lastS;
@@ -1332,7 +1333,7 @@ function respawn(sh){
   if(tr.gap[i]){while(tr.gap[i%tr.N])i++;i=(i+6)%tr.N;}
   const F=frameAt(tr,i*tr.spacing,makeFrame());
   sh.pos.copy(F.c).addScaledVector(F.U,1.6);sh.vel.copy(F.T).multiplyScalar(35);sh.fwd.copy(F.T);sh.visUp.copy(F.U);sh.idx=i;
-  sh.spinT=0;sh.ghostT=1.6;sh.airT=0;sh.trailReset=true;sh.respawns=(sh.respawns||0)+1;
+  sh.spinT=0;sh.bumpT=0;sh.ghostT=1.6;sh.airT=0;sh.trailReset=true;sh.respawns=(sh.respawns||0)+1;
   locate(tr,sh.pos,i,sh.loc);
   let ds=sh.loc.s-sh.lastS;if(ds<-tr.L/2){sh.lapCount++;onLapCross(sh);}else if(ds>tr.L/2)sh.lapCount--;
   sh.lastS=sh.loc.s;
@@ -1351,16 +1352,32 @@ function onLapCross(sh){
     }
   }
 }
+// Contact between racers. Equal masses bounce apart along the contact normal (kept in the road plane).
+// The one driving into the other, the rammer, also shoves its victim sideways and knocks its grip loose for a moment
+// (bumpT), so a well-timed hit can push a rival wide or into the wall. A boost makes the hit harder; a shield turns it
+// back on the rammer.
+const BUMP={r:2.7,e:0.5,shove:0.3,maxShove:20,stagger:0.016,maxStagger:0.7,minRv:6,sfx:40},_cp=new V3(),_bn=new V3();
 function collideShips(){
   const s=game.ships;
   for(let a=0;a<s.length;a++)for(let b=a+1;b<s.length;b++){
     const A=s[a],B=s[b];if(A.ghostT>0||B.ghostT>0)continue;
-    _t1.subVectors(B.pos,A.pos);const d2=_t1.lengthSq();if(d2>7.3||d2<1e-6)continue;
-    const d=Math.sqrt(d2);_t1.multiplyScalar(1/d);const pen=2.7-d;
-    A.pos.addScaledVector(_t1,-pen/2);B.pos.addScaledVector(_t1,pen/2);
-    const rv=_t2.subVectors(B.vel,A.vel).dot(_t1);
-    if(rv<0){A.vel.addScaledVector(_t1,rv*0.6);B.vel.addScaledVector(_t1,-rv*0.6);
-      if((A.isPlayer||B.isPlayer)&&rv<-6){game.shake=Math.max(game.shake,0.3);Sound.sfx('bump',clamp(-rv/30,0.4,1));}}
+    _t1.subVectors(B.pos,A.pos);const d2=_t1.lengthSq();if(d2>BUMP.r*BUMP.r||d2<1e-6)continue;
+    const d=Math.sqrt(d2),U=A.loc.U;_t1.addScaledVector(U,-_t1.dot(U));const nl=_t1.length();if(nl<1e-4)continue;_t1.multiplyScalar(1/nl);
+    const pen=BUMP.r-d;A.pos.addScaledVector(_t1,-pen/2);B.pos.addScaledVector(_t1,pen/2);
+    const rv=_t2.subVectors(B.vel,A.vel).dot(_t1);if(rv>=0)continue;
+    const aIn=A.vel.dot(_t1),bIn=-B.vel.dot(_t1),j=-(1+BUMP.e)*rv/2;
+    A.vel.addScaledVector(_t1,-j);B.vel.addScaledVector(_t1,j);
+    const close=-rv;if(close<BUMP.minRv)continue;
+    let ram=aIn>=bIn?A:B,vic=ram===A?B:A;
+    if(vic.shield>0&&ram.shield<=0){const t=ram;ram=vic;vic=t;}
+    // push the victim away from the rammer, across the road
+    _bn.subVectors(vic.pos,ram.pos);const R=vic.loc.R,sd=Math.sign(_bn.dot(R))||1;
+    const k=(ram.boostT>0?1.5:1)*(ram.shield>0?1.3:1);
+    vic.vel.addScaledVector(R,sd*Math.min(BUMP.maxShove,close*BUMP.shove*k));
+    vic.bumpT=Math.max(vic.bumpT||0,Math.min(BUMP.maxStagger,close*BUMP.stagger*k));
+    _cp.addVectors(A.pos,B.pos).multiplyScalar(0.5);
+    if(nearCam(_cp)){_t2.copy(vic.vel).multiplyScalar(0.5);emit(_cp,_t2,6,Math.round(clamp(close,6,24)),0xffd08a,0.4,20);}
+    if(A.isPlayer||B.isPlayer){game.shake=Math.max(game.shake,clamp(close/BUMP.sfx,0.25,0.8));Sound.sfx('bump',clamp(close/BUMP.sfx,0.4,1));}
   }
 }
 
@@ -1484,6 +1501,9 @@ function aiControl(sh,dt){
   // avoidance
   a.avoid*=Math.exp(-dt*1.5);
   for(const o of game.ships){if(o===sh)continue;const d=wrapDS(tr,L.s,o.loc.s);if(d>0&&d<16&&Math.abs(o.loc.lat-L.lat)<3.4){a.avoid=(o.loc.lat>L.lat?-1:1)*Math.min(5,tr.hw*0.3);break;}}
+  // aggressive drivers lean on a rival running alongside to push it wide (not one with a shield)
+  if(a.aggr>0.5&&game.state==='race'){for(const o of game.ships){if(o===sh||o.shield>0||o.ghostT>0)continue;const d=wrapDS(tr,L.s,o.loc.s),dl=o.loc.lat-L.lat;
+    if(Math.abs(d)<2.8&&Math.abs(dl)>1&&Math.abs(dl)<5.5){a.avoid=Math.sign(dl)*3.2;break;}}}
   for(const m of game.missiles){if(m.target!==sh)continue;const d=wrapDS(tr,m.s,L.s);
     if(m.aiDodge===undefined)m.aiDodge=Math.random()<0.25+(a.base-0.86)*2;
     if(m.aiDodge&&d>0&&d<70)a.avoid=(m.lat>L.lat?-1:1)*tr.hw*0.45;}
@@ -1684,6 +1704,7 @@ function updateShipVisual(sh,dt){
   sh.vroll=lerp(sh.vroll||0,sh.in.steer*0.42,1-Math.exp(-dt*6));
   _qa.setFromAxisAngle(ZAX,sh.vroll);M.quaternion.multiply(_qa);
   if(sh.spinAng){_qb.setFromAxisAngle(YAX,sh.spinAng);M.quaternion.multiply(_qb);}
+  if(sh.bumpT>0){_qb.setFromAxisAngle(YAX,Math.sin(game.time*28)*Math.min(0.5,sh.bumpT)*0.5);M.quaternion.multiply(_qb);}
   M.position.copy(sh.pos).addScaledVector(sh.visUp,Math.sin(game.time*3+sh.id)*0.06);
   const ud=M.userData,thr=game.state!=='countdown'&&(+sh.in.gas||0)>0.05;
   const fl=(thr?1:0.35)*(sh.boostT>0?1.9:1)*(0.85+Math.random()*0.3);
